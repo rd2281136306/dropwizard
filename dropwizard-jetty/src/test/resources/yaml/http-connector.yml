@@ -19,5 +19,7 @@ acceptQueueSize: 1024
 reuseAddress: false
 useServerHeader: true
 useDateHeader: false
-useForwardedHeaders: false
+useForwardedHeaders: true
 httpCompliance: RFC2616
+requestCookieCompliance: RFC2965
+responseCookieCompliance: RFC6265

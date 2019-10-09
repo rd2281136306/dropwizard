@@ -12,12 +12,14 @@ import io.dropwizard.util.DataSize;
 import io.dropwizard.util.Duration;
 import io.dropwizard.util.Resources;
 import io.dropwizard.validation.BaseValidator;
+import org.eclipse.jetty.http.CookieCompliance;
 import org.eclipse.jetty.http.HttpCompliance;
 import org.eclipse.jetty.io.ArrayByteBufferPool;
 import org.eclipse.jetty.io.ByteBufferPool;
 import org.eclipse.jetty.server.ForwardedRequestCustomizer;
 import org.eclipse.jetty.server.HttpConfiguration;
 import org.eclipse.jetty.server.HttpConnectionFactory;
+import org.eclipse.jetty.server.ProxyConnectionFactory;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.ServerConnector;
 import org.eclipse.jetty.util.thread.QueuedThreadPool;
@@ -76,8 +78,10 @@ class HttpConnectorFactoryTest {
         assertThat(http.isReuseAddress()).isTrue();
         assertThat(http.isUseServerHeader()).isFalse();
         assertThat(http.isUseDateHeader()).isTrue();
-        assertThat(http.isUseForwardedHeaders()).isTrue();
+        assertThat(http.isUseForwardedHeaders()).isFalse();
         assertThat(http.getHttpCompliance()).isEqualTo(HttpCompliance.RFC7230);
+        assertThat(http.getRequestCookieCompliance()).isEqualTo(CookieCompliance.RFC6265);
+        assertThat(http.getResponseCookieCompliance()).isEqualTo(CookieCompliance.RFC6265);
     }
 
     @Test
@@ -106,8 +110,12 @@ class HttpConnectorFactoryTest {
         assertThat(http.isReuseAddress()).isFalse();
         assertThat(http.isUseServerHeader()).isTrue();
         assertThat(http.isUseDateHeader()).isFalse();
-        assertThat(http.isUseForwardedHeaders()).isFalse();
+        assertThat(http.isUseForwardedHeaders()).isTrue();
+        HttpConfiguration httpConfiguration = http.buildHttpConfiguration();
+        assertThat(httpConfiguration.getCustomizers()).hasAtLeastOneElementOfType(ForwardedRequestCustomizer.class);
         assertThat(http.getHttpCompliance()).isEqualTo(HttpCompliance.RFC2616);
+        assertThat(http.getRequestCookieCompliance()).isEqualTo(CookieCompliance.RFC2965);
+        assertThat(http.getResponseCookieCompliance()).isEqualTo(CookieCompliance.RFC6265);
     }
 
     @Test
@@ -119,6 +127,8 @@ class HttpConnectorFactoryTest {
         http.setAcceptQueueSize(1024);
         http.setMinResponseDataPerSecond(DataSize.bytes(200));
         http.setMinRequestDataPerSecond(DataSize.bytes(42));
+        http.setRequestCookieCompliance(CookieCompliance.RFC6265);
+        http.setResponseCookieCompliance(CookieCompliance.RFC6265);
 
         Server server = new Server();
         MetricRegistry metrics = new MetricRegistry();
@@ -140,8 +150,8 @@ class HttpConnectorFactoryTest {
         // That's gross, but unfortunately ArrayByteBufferPool doesn't have API for configuration
         ByteBufferPool byteBufferPool = connector.getByteBufferPool();
         assertThat(byteBufferPool).isInstanceOf(ArrayByteBufferPool.class);
-        assertThat(getField(ArrayByteBufferPool.class, "_min", true).get(byteBufferPool)).isEqualTo(64);
-        assertThat(getField(ArrayByteBufferPool.class, "_inc", true).get(byteBufferPool)).isEqualTo(1024);
+        assertThat(getField(ArrayByteBufferPool.class, "_minCapacity", true).get(byteBufferPool)).isEqualTo(64);
+        assertThat(getField(ArrayByteBufferPool.class, "_factor", true).get(byteBufferPool)).isEqualTo(1024);
         assertThat(((Object[]) getField(ArrayByteBufferPool.class, "_direct", true)
                 .get(byteBufferPool)).length).isEqualTo(64);
 
@@ -164,10 +174,29 @@ class HttpConnectorFactoryTest {
         assertThat(httpConfiguration.getResponseHeaderSize()).isEqualTo(8192);
         assertThat(httpConfiguration.getSendDateHeader()).isTrue();
         assertThat(httpConfiguration.getSendServerVersion()).isFalse();
-        assertThat(httpConfiguration.getCustomizers()).hasAtLeastOneElementOfType(ForwardedRequestCustomizer.class);
+        assertThat(httpConfiguration.getCustomizers()).noneMatch(customizer -> customizer.getClass().equals(ForwardedRequestCustomizer.class));
         assertThat(httpConfiguration.getMinRequestDataRate()).isEqualTo(42);
         assertThat(httpConfiguration.getMinResponseDataRate()).isEqualTo(200);
+        assertThat(httpConfiguration.getRequestCookieCompliance()).isEqualTo(CookieCompliance.RFC6265);
+        assertThat(httpConfiguration.getResponseCookieCompliance()).isEqualTo(CookieCompliance.RFC6265);
 
+        connector.stop();
+        server.stop();
+    }
+
+    @Test
+    void testBuildConnectorWithProxyProtocol() throws Exception {
+        HttpConnectorFactory http = new HttpConnectorFactory();
+        http.setBindHost("127.0.0.1");
+        http.setUseProxyProtocol(true);
+
+        Server server = new Server();
+        MetricRegistry metrics = new MetricRegistry();
+        ThreadPool threadPool = new QueuedThreadPool();
+
+        ServerConnector connector = (ServerConnector) http.build(server, metrics, "test-http-connector-with-proxy-protocol", threadPool);
+
+        assertThat(connector.getConnectionFactories().toArray()[0]).isInstanceOf(ProxyConnectionFactory.class);
         connector.stop();
         server.stop();
     }

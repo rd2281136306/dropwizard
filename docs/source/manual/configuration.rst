@@ -63,8 +63,11 @@ rootPath                            ``/*``                                      
 registerDefaultExceptionMappers     true                                             Whether or not the default Jersey ExceptionMappers should be registered.
                                                                                      Set this to false if you want to register your own.
 enableThreadNameFilter              true                                             Whether or not to apply the ``ThreadNameFilter`` that adjusts thread names to include the request method and request URI.
+dumpAfterStart                      false                                            Whether or not to dump `Jetty Diagnostics`_ after start.
+dumpBeforeStop                      false                                            Whether or not to dump `Jetty Diagnostics`_ before stop.
 =================================== ===============================================  =============================================================================
 
+.. _Jetty Diagnostics: https://www.eclipse.org/jetty/documentation/9.4.x/jetty-dump-tool.html
 
 .. _man-configuration-gzip:
 
@@ -310,7 +313,7 @@ HTTP
           reuseAddress: true
           useServerHeader: false
           useDateHeader: true
-          useForwardedHeaders: true
+          useForwardedHeaders: false
           httpCompliance: RFC7230
 
 
@@ -354,7 +357,7 @@ acceptQueueSize          (OS default)        The size of the TCP/IP accept queue
 reuseAddress             true                Whether or not ``SO_REUSEADDR`` is enabled on the listening socket.
 useServerHeader          false               Whether or not to add the ``Server`` header to each response.
 useDateHeader            true                Whether or not to add the ``Date`` header to each response.
-useForwardedHeaders      true                Whether or not to look at ``X-Forwarded-*`` headers added by proxies. See
+useForwardedHeaders      false               Whether or not to look at ``X-Forwarded-*`` headers added by proxies. See
                                              `ForwardedRequestCustomizer`_ for details.
 httpCompliance           RFC7230             This sets the http compliance level used by Jetty when parsing http, this
                                              can be useful when using a non-RFC7230 compliant front end, such as nginx,
@@ -365,6 +368,26 @@ httpCompliance           RFC7230             This sets the http compliance level
 
                                              * RFC7230: Disallow header folding.
                                              * RFC2616: Allow header folding.
+requestCookieCompliance  RFC6265             This sets the cookie compliance level used by Jetty when parsing request ``Cookie``
+                                             headers, this can be useful when needing to support Version=1 cookies defined in
+                                             RFC2109 (and continued in RFC2965) which allows for special/reserved characters
+                                             (control, separator, et al) to be enclosed within double quotes when used in a
+                                             cookie value;
+                                             Possible values are set forth in the ``org.eclipse.jetty.http.CookieCompliance``
+                                             enum:
+
+                                             * RFC6265: Special characters in cookie values must be encoded.
+                                             * RFC2965: Allows for special characters enclosed within double quotes.
+responseCookieCompliance RFC6265             This sets the cookie compliance level used by Jetty when generating response
+                                             ``Set-Cookie`` headers, this can be useful when needing to support Version=1 cookies
+                                             defined in RFC2109 (and continued in RFC2965) which allows for special/reserved
+                                             characters (control, separator, et al) to be enclosed within double quotes when used
+                                             in a cookie value;
+                                             Possible values are set forth in the ``org.eclipse.jetty.http.CookieCompliance``
+                                             enum:
+
+                                             * RFC6265: Special characters in cookie values must be encoded.
+                                             * RFC2965: Allows for special characters enclosed within double quotes.
 ======================== ==================  ======================================================================================
 
 .. _`java.net.Socket#setSoTimeout(int)`: https://docs.oracle.com/javase/8/docs/api/java/net/Socket.html#setSoTimeout-int-
@@ -928,6 +951,8 @@ JSON access log layout
         - X-Request-Id
       responseHeaders:
         - X-Request-Id
+      requestAttributes:
+        - SomeAttributeName
       customFieldNames:
         timestamp: "@timestamp"
       additionalFields:
@@ -966,6 +991,7 @@ includes                 (timestamp, remoteAddress,
                                                       - ``serverName``        *false*    Whether to include the name of the server to which the request was sent as the ``serverName`` field.
 requestHeaders           (empty)                      Set of request headers included in the JSON map as the ``headers`` field.
 responseHeaders          (empty)                      Set of response headers included in the JSON map as the ``responseHeaders`` field.
+requestAttributes        (empty)                      Set of ServletRequest attributes included in the JSON map as the ``requestAttributes`` field.
 customFieldNames         (empty)                      Map of field name replacements in the JSON map. For example ``requestTime:request_time, userAgent:user_agent)``.
 additionalFields         (empty)                      Map of fields to add in the JSON map.
 =======================  ===========================  ================

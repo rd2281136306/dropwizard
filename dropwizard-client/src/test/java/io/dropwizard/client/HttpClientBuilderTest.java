@@ -54,6 +54,7 @@ import org.apache.http.protocol.BasicHttpContext;
 import org.apache.http.protocol.HTTP;
 import org.apache.http.protocol.HttpContext;
 import org.apache.http.protocol.HttpProcessor;
+import org.apache.http.protocol.HttpRequestExecutor;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -81,13 +82,38 @@ import static org.mockito.Mockito.when;
 import static org.mockito.MockitoAnnotations.initMocks;
 
 
+class AnotherHttpClientBuilder extends org.apache.http.impl.client.HttpClientBuilder {
+    public static AnotherHttpClientBuilder create() {
+        return new AnotherHttpClientBuilder();
+    }
+}
+
 public class HttpClientBuilderTest {
+    static class CustomRequestExecutor extends HttpRequestExecutor {
+    }
+
     static class CustomBuilder extends HttpClientBuilder {
         public boolean customized;
+        public org.apache.http.impl.client.HttpClientBuilder builder;
 
         public CustomBuilder(MetricRegistry metricRegistry) {
+            this(metricRegistry, org.apache.http.impl.client.HttpClientBuilder.create());
+        }
+
+        public CustomBuilder(MetricRegistry metricRegistry, org.apache.http.impl.client.HttpClientBuilder builder) {
             super(metricRegistry);
             customized = false;
+            this.builder = builder;
+        }
+
+        @Override
+        protected org.apache.http.impl.client.HttpClientBuilder createBuilder() {
+            return builder;
+        }
+
+        @Override
+        protected HttpRequestExecutor createRequestExecutor(String name) {
+            return new CustomRequestExecutor();
         }
 
         @Override
@@ -109,6 +135,7 @@ public class HttpClientBuilderTest {
     private HttpClientBuilder builder;
     private InstrumentedHttpClientConnectionManager connectionManager;
     private org.apache.http.impl.client.HttpClientBuilder apacheBuilder;
+    private AnotherHttpClientBuilder anotherApacheBuilder;
 
     public HttpClientBuilderTest() throws ClassNotFoundException {
         this.httpClientBuilderClass = Class.forName("org.apache.http.impl.client.HttpClientBuilder");
@@ -122,6 +149,7 @@ public class HttpClientBuilderTest {
         builder = new HttpClientBuilder(metricRegistry);
         connectionManager = spy(new InstrumentedHttpClientConnectionManager(metricRegistry, registry));
         apacheBuilder = org.apache.http.impl.client.HttpClientBuilder.create();
+        anotherApacheBuilder = spy(AnotherHttpClientBuilder.create());
         initMocks(this);
     }
 
@@ -337,6 +365,23 @@ public class HttpClientBuilderTest {
 
         assertThat(((RequestConfig) spyHttpClientBuilderField("defaultRequestConfig", apacheBuilder)).getCookieSpec())
                 .isEqualTo(CookieSpecs.DEFAULT);
+    }
+
+    @Test
+    public void normalizeUriByDefault() throws Exception {
+        assertThat(builder.using(configuration).createClient(apacheBuilder, connectionManager, "test")).isNotNull();
+
+        assertThat(((RequestConfig) spyHttpClientBuilderField("defaultRequestConfig", apacheBuilder)).isNormalizeUri())
+            .isEqualTo(true);
+    }
+
+    @Test
+    public void disableNormalizeUriWhenDisabled() throws Exception {
+        configuration.setNormalizeUriEnabled(false);
+        assertThat(builder.using(configuration).createClient(apacheBuilder, connectionManager, "test")).isNotNull();
+
+        assertThat(((RequestConfig) spyHttpClientBuilderField("defaultRequestConfig", apacheBuilder)).isNormalizeUri())
+            .isEqualTo(false);
     }
 
     @Test
@@ -698,6 +743,20 @@ public class HttpClientBuilderTest {
         assertThat(builder.customized).isFalse();
         builder.createClient(apacheBuilder, connectionManager, "test");
         assertThat(builder.customized).isTrue();
+        assertThat(FieldUtils.getField(httpClientBuilderClass,
+            "requestExec", true)
+            .get(apacheBuilder))
+            .isInstanceOf(CustomRequestExecutor.class);
+    }
+
+    @Test
+    public void buildWithAnotherBuilder() throws Exception {
+        CustomBuilder builder = new CustomBuilder(new MetricRegistry(), anotherApacheBuilder);
+        builder.build("test");
+        assertThat(FieldUtils.getField(httpClientBuilderClass,
+            "requestExec", true)
+            .get(anotherApacheBuilder))
+            .isInstanceOf(CustomRequestExecutor.class);
     }
 
     @Test
